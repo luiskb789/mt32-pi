@@ -327,14 +327,61 @@ void CSoundFontSynth::ReportStatus() const
 		m_pUI->ShowSystemMessage(m_SoundFontManager.GetSoundFontName(m_nCurrentSoundFontIndex));
 }
 
+// void CSoundFontSynth::UpdateLCD(CLCD& LCD, unsigned int nTicks)
+// {
+// 	const u8 nBarHeight = LCD.Height();
+// 	float ChannelLevels[16], PeakLevels[16];
+// 	m_MIDIMonitor.GetChannelLevels(nTicks, ChannelLevels, PeakLevels, m_nPercussionMask);
+// 	CUserInterface::DrawChannelLevels(LCD, nBarHeight, ChannelLevels, PeakLevels, 16, true);
+// }
 void CSoundFontSynth::UpdateLCD(CLCD& LCD, unsigned int nTicks)
 {
-	const u8 nBarHeight = LCD.Height();
-	float ChannelLevels[16], PeakLevels[16];
-	m_MIDIMonitor.GetChannelLevels(nTicks, ChannelLevels, PeakLevels, m_nPercussionMask);
-	CUserInterface::DrawChannelLevels(LCD, nBarHeight, ChannelLevels, PeakLevels, 16, true);
-}
+	if (!m_pSynth)
+		return;
 
+	char buffer[21]; // 20 ตัวอักษร + Null terminator
+
+	// 1. ดึงค่า Active Channel ปัจจุบันที่ปรับจาก MIDI Controller
+	u8 activeChannel = m_nActiveChannel;
+
+	// 2. ดึงค่า Volume ปัจจุบัน (0-100%)
+	int currentVolume = static_cast<int>(m_nVolume);
+
+	// 3. ดึงข้อมูล Preset (Bank, Program Number, Name) ตาม Channel นั้นๆ
+	m_Lock.Acquire();
+	fluid_preset_t* pPreset = fluid_synth_get_channel_preset(m_pSynth, activeChannel);
+	int prog = 0;
+	char presetName[17] = "";
+
+	if (pPreset)
+	{
+		prog = fluid_preset_get_num(pPreset);
+		const char* pName = fluid_preset_get_name(pPreset);
+		if (pName)
+		{
+			snprintf(presetName, sizeof(presetName), "%s", pName);
+		}
+	}
+	m_Lock.Release();
+
+	// ---------------------------------------------------
+	// แสดงผลบนจอ LCD2004 ตามรูปแบบที่กำหนด
+	// ---------------------------------------------------
+	// บรรทัดที่ 0: แสดงหมายเลข Program และชื่อเสียง (เช่น 000:Grand Piano)
+	snprintf(buffer, sizeof(buffer), "%03d:%-16.16s", prog, presetName);
+	LCD.Print(buffer, 0, 0, false, false);
+
+	// บรรทัดที่ 1: เส้นคั่น
+	LCD.Print("--------------------", 0, 1, false, false);
+
+	// บรรทัดที่ 2: แสดง Volume และ Midi_CH ตามค่าจริงที่ปรับจาก Controller
+	snprintf(buffer, sizeof(buffer), "Volume:%3d%%     Midi_CH:%02d", currentVolume, activeChannel + 1);
+	LCD.Print(buffer, 0, 2, false, false);
+
+	// บรรทัดที่ 3: แสดงชื่อไฟล์ SoundFont ปัจจุบัน
+	snprintf(buffer, sizeof(buffer), "SF: %-16.16s", m_SoundFontManager.GetSoundFontName(m_nCurrentSoundFontIndex));
+	LCD.Print(buffer, 0, 3, false, false);
+}
 bool CSoundFontSynth::SwitchSoundFont(size_t nIndex)
 {
 	// Is this SoundFont already active?
